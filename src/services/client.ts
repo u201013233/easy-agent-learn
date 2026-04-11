@@ -11,6 +11,7 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
+import { log } from "node:console";
 
 // ─── Default Configuration ─────────────────────────────────────────
 
@@ -39,6 +40,9 @@ export function getAnthropicClient(options?: {
     apiKey: options?.apiKey ?? process.env.ANTHROPIC_AUTH_TOKEN,
     baseURL: options?.baseURL ?? process.env.ANTHROPIC_BASE_URL,
   });
+
+  console.log("aaa", options?.apiKey);
+  console.log("bbbb", options?.baseURL);  
 
   if (!options) {
     clientInstance = client;

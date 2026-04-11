@@ -16,6 +16,7 @@ loadEnv();
 import { streamMessage } from "../services/stream.js";
 import { DEFAULT_MODEL } from "../services/client.js";
 import type { StreamEvent } from "../types/message.js";
+import { log } from "node:console";
 
 async function main(): Promise<void> {
   // ── Pre-flight check ──────────────────────────────────────────
@@ -54,6 +55,8 @@ async function main(): Promise<void> {
       case "text":
         // Write text deltas directly to stdout — the "typewriter effect"
         process.stdout.write(event.text);
+        console.log("..... write", event.text);
+        
         break;
 
       case "message_start":
@@ -62,7 +65,7 @@ async function main(): Promise<void> {
 
       case "message_done":
         // Newline after streaming text
-        console.log("\n");
+        console.log("message_done \n");
         console.log("\x1b[90m── Stream complete ──\x1b[0m");
         console.log(`   Stop reason:   ${event.stopReason}`);
         console.log(`   Input tokens:  ${event.usage.input_tokens}`);
@@ -77,7 +80,7 @@ async function main(): Promise<void> {
 
   // ── Also show the return value ────────────────────────────────
   if (result) {
-    console.log(`\n\x1b[90m── Assembled result ──\x1b[0m`);
+    console.log(`result end \n\x1b[90m── Assembled result ──\x1b[0m`);
     console.log(`   Stop reason:   ${result.stopReason}`);
     console.log(`   Total input:   ${result.usage.input_tokens} tokens`);
     console.log(`   Total output:  ${result.usage.output_tokens} tokens`);
@@ -89,7 +92,7 @@ async function main(): Promise<void> {
     if (Array.isArray(result.assistantMessage.content)) {
       for (const block of result.assistantMessage.content) {
         if (block.type === "text") {
-          console.log(`   [text] ${block.text.slice(0, 80)}...`);
+          console.log(`   [text] ${block.text}`);
         } else if (block.type === "tool_use") {
           console.log(`   [tool_use] ${block.name}(${JSON.stringify(block.input)})`);
         }
