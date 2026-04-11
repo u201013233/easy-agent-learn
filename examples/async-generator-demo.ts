@@ -9,13 +9,18 @@ function* simpleGenerator() {
   yield 1;
   yield 2;
   yield 3;
+  console.log("1111jieshu")
   return "done"; // return 值不会被 for...of 遍历到
 }
 
 console.log("=== 1. 基础 Generator ===");
-for (const val of simpleGenerator()) {
-  console.log("收到:", val);
+const re = simpleGenerator();
+let result = re.next();
+while (!result.done) {
+  console.log("yield 值:", result.value);
+  result = re.next();
 }
+console.log("return 值:", result.value); // "done"
 
 // ─── 2. AsyncGenerator：模拟 LLM 流式输出 ───────────────────────
 // async function* = 可以在内部 await，yield 产出 Promise 包裹的值
