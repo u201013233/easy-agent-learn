@@ -6,12 +6,12 @@ const VERSION = "0.1.0";
 async function main(): Promise<void> {
   // 快路径：不需要加载 React/Ink
   if (process.argv.includes("--version") || process.argv.includes("-v")) {
-    console.log( easy-agent v${VERSION} );
+    console.log(`easy-agent v${VERSION}`);
     process.exit(0);
   }
 
   if (process.argv.includes("--help") || process.argv.includes("-h")) {
-    console.log( easy-agent v${VERSION} — Terminal-native agentic coding system\n... );
+    console.log(`easy-agent v${VERSION} — Terminal-native agentic coding system\n...`);
     process.exit(0);
   }
 
@@ -23,18 +23,18 @@ async function main(): Promise<void> {
   const React = await import("react");
   const { render } = await import("ink");
   const { App } = await import("../ui/App.js");
-  const { DEFAULT_MODEL } = await import("../services/api/client.js");
+  const { DEFAULT_MODEL } = await import("../services/client.js");
 
   const resolvedModel = model ?? DEFAULT_MODEL;
   const system = "You are a helpful AI coding assistant. Be concise and direct.";
 
   const { waitUntilExit } = render(
-    React.createElement(App, { model: resolvedModel, system }),
+    React.createElement(App, { model: resolvedModel, system, toolsApiParams: [] }),
   );
   await waitUntilExit();
 }
 
 main().catch((err) => {
-  console.error( Fatal: ${err.message} );
+  console.error(`Fatal: ${err.message}`);
   process.exit(1);
 });

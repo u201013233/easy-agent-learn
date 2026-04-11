@@ -3,16 +3,47 @@ import {Box, Text, useApp, useInput} from "ink";
 import {MessageParam} from "@anthropic-ai/sdk/resources/messages.js";
 import {streamMessage, StreamResult} from "../services/stream.js";
 import {StreamEvent} from "../types/message.js";
-
+import {ToolCallInfo} from "./type.js";
+import Anthropic from "@anthropic-ai/sdk";
+import {Spinner} from "./components/Spinner.js";
+import type {ContentBlock, ToolUseBlock, ToolResultBlock} from "../types/message.js";
 
 interface AppProps {
     model: string;
+    toolsApiParams: Anthropic.Tool[];
     system?: string;
 }
 
 export const MAX_TOOL_TURNS = 50;
 
-export function App({model, system}: AppProps): React.ReactNode {
+// ─── Helpers ────────────────────────────────────────────────────────
+
+function extractAssistantText(msg: MessageParam): string | null {
+    if (typeof msg.content === "string") return msg.content;
+    if (!Array.isArray(msg.content)) return null;
+    return msg.content
+        .filter((b): b is ContentBlock & { type: "text" } => b.type === "text")
+        .map((b) => b.text)
+        .join("");
+}
+
+async function executeTools(
+    contentBlocks: ContentBlock[],
+    _signal?: AbortSignal,
+): Promise<MessageParam> {
+    const results: ToolResultBlock[] = [];
+    for (const block of contentBlocks) {
+        if (block.type !== "tool_use") continue;
+        results.push({
+            type: "tool_result",
+            tool_use_id: block.id,
+            content: `[Tool "${block.name}" not implemented]`,
+        });
+    }
+    return { role: "user", content: results } as MessageParam;
+}
+
+export function App({model, system, toolsApiParams}: AppProps): React.ReactNode {
     const {exit} = useApp();
 
     // 对话数据
@@ -91,7 +122,7 @@ export function App({model, system}: AppProps): React.ReactNode {
             let accumulatedText = "";
 
             while (true) {
-                const { value, done } = await generator.next();
+                const {value, done} = await generator.next();
                 if (done) return value ?? null;
 
                 const event = value as StreamEvent;
@@ -101,7 +132,7 @@ export function App({model, system}: AppProps): React.ReactNode {
                         setStreamingText(accumulatedText);  // 触发重渲染，终端实时更新
                         break;
                     case "tool_use_start":
-                        setToolCalls((prev) => [...prev, { name: event.name }]);
+                        setToolCalls((prev) => [...prev, {name: event.name}]);
                         break;
                     case "error":
                         setErrorText(event.error.message);
@@ -118,7 +149,10 @@ export function App({model, system}: AppProps): React.ReactNode {
             const trimmed = text.trim();
 
             // Slash commands 本地拦截
-            if (trimmed === "/exit" || trimmed === "/quit") { exit(); return; }
+            if (trimmed === "/exit" || trimmed === "/quit") {
+                exit();
+                return;
+            }
             if (trimmed === "/clear") {
                 setMessages([]);
                 messagesRef.current = [];
@@ -126,7 +160,7 @@ export function App({model, system}: AppProps): React.ReactNode {
                 return;
             }
             if (trimmed === "/history") {
-                setInfoMessage( ${messagesRef.current.length} messages in conversation. );
+                setInfoMessage(`${messagesRef.current.length} messages in conversation.`);
                 return;
             }
 
@@ -139,7 +173,7 @@ export function App({model, system}: AppProps): React.ReactNode {
             setSpinnerLabel("Thinking");
 
             // 追加 user message，创建本轮消息数组
-            const userMsg: MessageParam = { role: "user", content: trimmed };
+            const userMsg: MessageParam = {role: "user", content: trimmed};
             let loopMessages = [...messagesRef.current, userMsg];
             setMessages(loopMessages);
             messagesRef.current = loopMessages;
@@ -187,7 +221,7 @@ export function App({model, system}: AppProps): React.ReactNode {
                     break;  // stop_reason 不是 tool_use → 对话结束
                 }
 
-                setLastUsage({ input: totalIn, output: totalOut });
+                setLastUsage({input: totalIn, output: totalOut});
             } catch (err: unknown) {
                 if (err instanceof Error && err.name === "AbortError") {
                     setInfoMessage("Interrupted.");
@@ -215,7 +249,7 @@ export function App({model, system}: AppProps): React.ReactNode {
             {messages.map((msg, i) => {
                 if (msg.role === "user" && typeof msg.content === "string") {
                     return (
-                        <Box key={ u${i} } marginTop={1}>
+                        <Box key={`u${i}`} marginTop={1}>
                             <Text color="green" bold>{"❯ "}</Text>
                             <Text>{msg.content}</Text>
                         </Box>
@@ -225,7 +259,7 @@ export function App({model, system}: AppProps): React.ReactNode {
                     const text = extractAssistantText(msg);
                     if (text) {
                         return (
-                            <Box key={ a${i} }>
+                            <Box key={`a${i}`}>
                                 <Text color="magenta">{"▎ "}</Text>
                                 <Text>{text}</Text>
                             </Box>
@@ -237,7 +271,7 @@ export function App({model, system}: AppProps): React.ReactNode {
 
             {/* 工具调用指示器 */}
             {toolCalls.map((tc, i) => (
-                <Box key={ tc${i} } marginLeft={2}>
+                <Box key={`tc${i}`} marginLeft={2}>
                     {tc.resultLength !== undefined
                         ? <Text color="green">{"✓ "}{tc.name} ({tc.resultLength} chars)</Text>
                         : <Text color="yellow">{"⚡ Using tool: "}{tc.name}</Text>}
@@ -245,7 +279,7 @@ export function App({model, system}: AppProps): React.ReactNode {
             ))}
 
             {/* Spinner：等待 API 响应时显示 */}
-            {isLoading && !streamingText && <Spinner label={spinnerLabel} />}
+            {isLoading && !streamingText && <Spinner label={spinnerLabel}/>}
 
             {/* 流式文本：API 正在回复时实时显示 */}
             {isLoading && streamingText && (
