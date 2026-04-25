@@ -143,7 +143,7 @@ export function App({model, system, toolsApiParams}: AppProps): React.ReactNode 
                             output: result.usage.output_tokens,
                         });
 
-                        if (result.terminationReason === "aborted") {
+                        if (result.terminationReason === "aborted" || abort.signal.aborted) {
                             setInfoMessage("Interrupted.");
                         }
                         break;
