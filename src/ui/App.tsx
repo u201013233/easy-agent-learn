@@ -51,9 +51,6 @@ export function App({model, system, toolsApiParams}: AppProps): React.ReactNode 
             if (abortRef.current) {
                 abortRef.current.abort();
                 abortRef.current = null;
-                setIsLoading(false);
-                setStreamingText("");
-                setInfoMessage("Interrupted.");
             }
             return;
         }
@@ -159,14 +156,24 @@ export function App({model, system, toolsApiParams}: AppProps): React.ReactNode 
                             break;
 
                         case "tool_use_start":
-                            setToolCalls((prev) => [...prev, {name: event.name}]);
+                            setToolCalls((prev) => [...prev, {id: event.id, name: event.name}]);
                             setSpinnerLabel("Using tool: " + event.name);
+                            break;
+
+                        case "tool_use_call":
+                            setToolCalls((prev) =>
+                                prev.map((tc) =>
+                                    tc.id === event.id && tc.input === undefined
+                                        ? {...tc, input: JSON.stringify(event.input)}
+                                        : tc,
+                                ),
+                            );
                             break;
 
                         case "tool_use_done":
                             setToolCalls((prev) =>
                                 prev.map((tc) =>
-                                    tc.name === event.name
+                                    tc.id === event.id
                                         ? {...tc, resultLength: event.resultLength, isError: event.isError}
                                         : tc,
                                 ),
@@ -177,7 +184,6 @@ export function App({model, system, toolsApiParams}: AppProps): React.ReactNode 
                         case "assistant_message":
                             setMessages((prev) => [...prev, event.message]);
                             messagesRef.current = [...messagesRef.current, event.message];
-                            // 清空流式文本，下一轮如果还有文本会重新开始
                             setStreamingText("");
                             break;
 
@@ -199,6 +205,7 @@ export function App({model, system, toolsApiParams}: AppProps): React.ReactNode 
                 }
             } finally {
                 setIsLoading(false);
+                setStreamingText("");
                 abortRef.current = null;
             }
         },
@@ -240,10 +247,13 @@ export function App({model, system, toolsApiParams}: AppProps): React.ReactNode 
 
             {/* 工具调用指示器 */}
             {toolCalls.map((tc, i) => (
-                <Box key={`tc${i}`} marginLeft={2}>
+                <Box key={`tc${i}`} marginLeft={2} flexDirection="column">
                     {tc.resultLength !== undefined
                         ? <Text color="green">{"✓ "}{tc.name} ({tc.resultLength} chars)</Text>
                         : <Text color="yellow">{"⚡ Using tool: "}{tc.name}</Text>}
+                    {tc.input && (
+                        <Text dimColor>{"  args: "}{tc.input}</Text>
+                    )}
                 </Box>
             ))}
 

@@ -77,6 +77,13 @@ export interface StreamErrorEvent {
 
 // ─── Agentic Loop Events (extends stream events) ───────────────
 
+export interface ToolUseCallEvent {
+  type: "tool_use_call";
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
 export interface ToolUseDoneEvent {
   type: "tool_use_done";
   id: string;
@@ -97,6 +104,7 @@ export interface ToolResultMessageEvent {
 
 export type LoopEvent =
   | StreamEvent
+  | ToolUseCallEvent
   | ToolUseDoneEvent
   | AssistantMessageEvent
   | ToolResultMessageEvent;

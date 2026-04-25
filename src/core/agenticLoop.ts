@@ -64,7 +64,7 @@ export async function* query(
     }
 
     state = { ...state, turnCount: state.turnCount + 1 };
-    console.log(`[loop] turn ${state.turnCount}/${maxTurns}, messages: ${state.messages.length}`);
+    process.stderr.write(`[loop] turn ${state.turnCount}/${maxTurns}, messages: ${state.messages.length}\n`);
 
     // 2. Call streamMessage()
     let result;
@@ -141,7 +141,7 @@ export async function* query(
 
     // 6. If not tool_use → completed
     if (result.stopReason !== "tool_use") {
-      console.log(`[loop] completed (stopReason: ${result.stopReason}), turns: ${state.turnCount}, tokens: ${totalUsage.input_tokens}in/${totalUsage.output_tokens}out`);
+      process.stderr.write(`[loop] completed (stopReason: ${result.stopReason}), turns: ${state.turnCount}, tokens: ${totalUsage.input_tokens}in/${totalUsage.output_tokens}out\n`);
       return {
         messages: state.messages,
         usage: totalUsage,
@@ -162,6 +162,14 @@ export async function* query(
     }
 
     try {
+      // Yield tool_use_call events (with full input) before executing
+      for (const block of contentBlocks) {
+        if (block.type === "tool_use") {
+          const tb = block as ToolUseBlock;
+          yield { type: "tool_use_call", id: tb.id, name: tb.name, input: tb.input };
+        }
+      }
+
       const toolResultMsg = await runTools(contentBlocks, toolContext, params.signal);
       state = {
         ...state,
@@ -194,7 +202,7 @@ export async function* query(
   }
 
   // max_turns reached
-  console.log(`[loop] max_turns (${maxTurns}) reached`);
+  process.stderr.write(`[loop] max_turns (${maxTurns}) reached\n`);
   return {
     messages: state.messages,
     usage: totalUsage,
@@ -235,7 +243,7 @@ async function runTools(
     const tool = findToolByName(toolUseBlock.name);
 
     if (!tool) {
-      console.error(`[tool] not found: ${toolUseBlock.name}`);
+      process.stderr.write(`[tool] not found: ${toolUseBlock.name}\n`);
       const errorContent = `Tool "${toolUseBlock.name}" not found`;
       results.push({
         type: "tool_result",
@@ -252,11 +260,11 @@ async function runTools(
       continue;
     }
 
-    console.log(`[tool] calling ${toolUseBlock.name}(${JSON.stringify(toolUseBlock.input)})`);
+    process.stderr.write(`[tool] calling ${toolUseBlock.name}(${JSON.stringify(toolUseBlock.input)})\n`);
 
     try {
       const toolResult = await tool.call(toolUseBlock.input, toolContext);
-      console.log(`[tool] ${toolUseBlock.name} → ${toolResult.isError ? "ERROR" : "ok"} (${toolResult.content.length} chars)`);
+      process.stderr.write(`[tool] ${toolUseBlock.name} → ${toolResult.isError ? "ERROR" : "ok"} (${toolResult.content.length} chars)\n`);
       results.push({
         type: "tool_result",
         tool_use_id: toolUseBlock.id,
@@ -271,7 +279,7 @@ async function runTools(
       });
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error(`[tool] ${toolUseBlock.name} threw: ${errMsg}`);
+      process.stderr.write(`[tool] ${toolUseBlock.name} threw: ${errMsg}\n`);
       const errorContent = `Error executing ${toolUseBlock.name}: ${errMsg}`;
       results.push({
         type: "tool_result",
