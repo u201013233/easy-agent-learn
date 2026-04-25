@@ -15,6 +15,14 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
+  // --dump-system-prompt: 输出组装后的 system prompt
+  if (process.argv.includes("--dump-system-prompt")) {
+    const { buildSystemPrompt } = await import("../context/systemPrompt.js");
+    const prompt = await buildSystemPrompt({ cwd: process.cwd() });
+    console.log(prompt);
+    process.exit(0);
+  }
+
   // 解析 --model 参数
   const modelIndex = process.argv.indexOf("--model");
   const model = modelIndex !== -1 ? process.argv[modelIndex + 1] : undefined;
@@ -25,9 +33,10 @@ async function main(): Promise<void> {
   const { App } = await import("../ui/App.js");
   const { DEFAULT_MODEL } = await import("../services/client.js");
   const { getToolsApiParams } = await import("../tools/index.js");
+  const { buildSystemPrompt } = await import("../context/systemPrompt.js");
 
   const resolvedModel = model ?? DEFAULT_MODEL;
-  const system = "You are a helpful AI coding assistant. Be concise and direct.";
+  const system = await buildSystemPrompt({ cwd: process.cwd() });
   const toolsApiParams = getToolsApiParams();
 
   const { waitUntilExit } = render(
