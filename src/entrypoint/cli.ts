@@ -24,12 +24,14 @@ async function main(): Promise<void> {
   const { render } = await import("ink");
   const { App } = await import("../ui/App.js");
   const { DEFAULT_MODEL } = await import("../services/client.js");
+  const { getToolsApiParams } = await import("../tools/index.js");
 
   const resolvedModel = model ?? DEFAULT_MODEL;
   const system = "You are a helpful AI coding assistant. Be concise and direct.";
+  const toolsApiParams = getToolsApiParams();
 
   const { waitUntilExit } = render(
-    React.createElement(App, { model: resolvedModel, system, toolsApiParams: [] }),
+    React.createElement(App, { model: resolvedModel, system, toolsApiParams }),
   );
   await waitUntilExit();
 }

@@ -1,4 +1,6 @@
 // 三种内容块
+import type { MessageParam } from "@anthropic-ai/sdk/resources/messages.js";
+
 export interface TextBlock {
   type: "text";
   text: string;
@@ -72,6 +74,34 @@ export interface StreamErrorEvent {
   type: "error";
   error: Error;
 }
+
+// ─── Agentic Loop Events (extends stream events) ───────────────
+
+export interface ToolUseDoneEvent {
+  type: "tool_use_done";
+  id: string;
+  name: string;
+  resultLength: number;
+  isError?: boolean;
+}
+
+export interface AssistantMessageEvent {
+  type: "assistant_message";
+  message: MessageParam;
+}
+
+export interface ToolResultMessageEvent {
+  type: "tool_result_message";
+  message: MessageParam;
+}
+
+export type LoopEvent =
+  | StreamEvent
+  | ToolUseDoneEvent
+  | AssistantMessageEvent
+  | ToolResultMessageEvent;
+
+export type LoopTerminationReason = "completed" | "aborted" | "model_error" | "max_turns";
 
 export type StreamEvent =
   | StreamTextEvent
