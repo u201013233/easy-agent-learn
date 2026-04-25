@@ -64,6 +64,7 @@ export async function* query(
     }
 
     state = { ...state, turnCount: state.turnCount + 1 };
+    console.log(`[loop] turn ${state.turnCount}/${maxTurns}, messages: ${state.messages.length}`);
 
     // 2. Call streamMessage()
     let result;
@@ -140,6 +141,7 @@ export async function* query(
 
     // 6. If not tool_use → completed
     if (result.stopReason !== "tool_use") {
+      console.log(`[loop] completed (stopReason: ${result.stopReason}), turns: ${state.turnCount}, tokens: ${totalUsage.input_tokens}in/${totalUsage.output_tokens}out`);
       return {
         messages: state.messages,
         usage: totalUsage,
@@ -192,6 +194,7 @@ export async function* query(
   }
 
   // max_turns reached
+  console.log(`[loop] max_turns (${maxTurns}) reached`);
   return {
     messages: state.messages,
     usage: totalUsage,
@@ -232,6 +235,7 @@ async function runTools(
     const tool = findToolByName(toolUseBlock.name);
 
     if (!tool) {
+      console.error(`[tool] not found: ${toolUseBlock.name}`);
       const errorContent = `Tool "${toolUseBlock.name}" not found`;
       results.push({
         type: "tool_result",
@@ -248,8 +252,11 @@ async function runTools(
       continue;
     }
 
+    console.log(`[tool] calling ${toolUseBlock.name}(${JSON.stringify(toolUseBlock.input)})`);
+
     try {
       const toolResult = await tool.call(toolUseBlock.input, toolContext);
+      console.log(`[tool] ${toolUseBlock.name} → ${toolResult.isError ? "ERROR" : "ok"} (${toolResult.content.length} chars)`);
       results.push({
         type: "tool_result",
         tool_use_id: toolUseBlock.id,
@@ -263,7 +270,9 @@ async function runTools(
         isError: toolResult.isError,
       });
     } catch (err: unknown) {
-      const errorContent = `Error executing ${toolUseBlock.name}: ${err instanceof Error ? err.message : String(err)}`;
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.error(`[tool] ${toolUseBlock.name} threw: ${errMsg}`);
+      const errorContent = `Error executing ${toolUseBlock.name}: ${errMsg}`;
       results.push({
         type: "tool_result",
         tool_use_id: toolUseBlock.id,
