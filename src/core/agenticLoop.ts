@@ -263,7 +263,7 @@ async function runTools(
     process.stderr.write(`[tool] calling ${toolUseBlock.name}(${JSON.stringify(toolUseBlock.input)})\n`);
 
     try {
-      const toolResult = await tool.call(toolUseBlock.input, toolContext);
+      const toolResult = await tool.call(toolUseBlock.input, toolContext, signal);
       process.stderr.write(`[tool] ${toolUseBlock.name} → ${toolResult.isError ? "ERROR" : "ok"} (${toolResult.content.length} chars)\n`);
       results.push({
         type: "tool_result",

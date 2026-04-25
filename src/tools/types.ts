@@ -13,5 +13,5 @@ export interface Tool {
   inputSchema: Record<string, unknown>;
   isReadOnly(): boolean;
   isEnabled(): boolean;
-  call(input: Record<string, unknown>, context: ToolContext): Promise<ToolResult>;
+  call(input: Record<string, unknown>, context: ToolContext, signal?: AbortSignal): Promise<ToolResult>;
 }
