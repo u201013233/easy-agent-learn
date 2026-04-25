@@ -32,6 +32,7 @@ async function main(): Promise<void> {
 
   const { waitUntilExit } = render(
     React.createElement(App, { model: resolvedModel, system, toolsApiParams }),
+    { exitOnCtrlC: false },
   );
   await waitUntilExit();
 }
