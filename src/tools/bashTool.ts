@@ -74,6 +74,7 @@ export const bashTool: Tool = {
 
     return new Promise((resolve) => {
       const shell = process.env.SHELL || "/bin/bash";
+      process.stderr.write(`[bash] spawning: ${command}\n`);
       let child: ChildProcess;
 
       try {
@@ -103,6 +104,7 @@ export const bashTool: Tool = {
       // Timeout
       const timer = setTimeout(() => {
         killed = true;
+        process.stderr.write(`[bash] timeout (${DEFAULT_TIMEOUT}ms), killing\n`);
         child.kill("SIGKILL");
       }, DEFAULT_TIMEOUT);
 
@@ -110,6 +112,7 @@ export const bashTool: Tool = {
       const onAbort = () => {
         if (!killed) {
           killed = true;
+          process.stderr.write(`[bash] abort signal received, killing\n`);
           child.kill("SIGTERM");
           // Give a brief grace period, then force kill
           setTimeout(() => {
@@ -126,6 +129,8 @@ export const bashTool: Tool = {
         const exitMsg = killed
           ? "Exit code: killed (timeout or interrupted)"
           : "Exit code: " + code;
+
+        process.stderr.write(`[bash] exited code=${code} killed=${killed} stdout=${stdout.length}chars stderr=${stderr.length}chars\n`);
 
         const output = [
           exitMsg,
