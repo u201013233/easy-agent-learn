@@ -167,6 +167,43 @@ export async function appendEntry(cwd: string, sessionId: string, entry: Transcr
   await fs.writeFile(paths.latestPath, sessionId + "\n", "utf-8");
 }
 
+/**
+ * Rewrite transcript with compacted messages.
+ * Keeps session_meta and latest usage, replaces all message entries.
+ */
+export async function rewriteTranscriptMessages(
+  cwd: string,
+  sessionId: string,
+  messages: MessageParam[],
+): Promise<void> {
+  const paths = getSessionPaths(cwd, sessionId);
+  const entries = await readTranscript(paths.transcriptPath);
+
+  const compactedEntries: TranscriptEntry[] = [];
+
+  // Keep session_meta
+  const meta = entries.find((e) => e.type === "session_meta");
+  if (meta) compactedEntries.push(meta);
+
+  // Write new messages
+  for (const msg of messages) {
+    compactedEntries.push(createMessageEntry({
+      role: msg.role as "user" | "assistant",
+      message: msg,
+    }));
+  }
+
+  // Keep latest usage
+  const latestUsage = [...entries].reverse().find(
+    (e): e is Extract<TranscriptEntry, { type: "usage" }> => e.type === "usage",
+  );
+  if (latestUsage) compactedEntries.push(latestUsage);
+
+  // Write compacted transcript
+  const content = compactedEntries.map((e) => JSON.stringify(e)).join("\n") + "\n";
+  await fs.writeFile(paths.transcriptPath, content, "utf-8");
+}
+
 // ─── Read Operations ────────────────────────────────────────
 
 export function parseJsonLine(line: string): TranscriptEntry | null {

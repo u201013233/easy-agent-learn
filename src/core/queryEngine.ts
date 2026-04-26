@@ -9,6 +9,7 @@ import {
   createSessionId,
   initSession,
   appendEntry,
+  rewriteTranscriptMessages,
   createMessageEntry,
   createToolEventEntry,
   createUsageEntry,
@@ -188,10 +189,11 @@ export class QueryEngine {
       );
 
       if (!result.didCompact) {
-        const msg = result.didMicroCompact
-          ? `[compact] micro-compacted old tool results (no full compaction needed). ${this.messages.length} messages.`
-          : `[compact] context within budget, no compaction needed. ${this.messages.length} messages.`;
-        yield { type: "command", kind: "info", message: msg };
+        if (result.microCompactClearedCount > 0) {
+          yield { type: "command", kind: "info", message: `[compact] micro-compact: cleared ${result.microCompactClearedCount} old tool results, ${this.messages.length} messages total. No full compaction needed.` };
+        } else {
+          yield { type: "command", kind: "info", message: `[compact] context within budget, no compaction needed. ${this.messages.length} messages.` };
+        }
         return { handled: true };
       }
 
@@ -203,7 +205,11 @@ export class QueryEngine {
 
       yield { type: "messages_updated", messages: [...this.messages] };
 
-      yield { type: "command", kind: "info", message: `[compact] done: ${beforeCount} → ${this.messages.length} messages (tail preserved)` };
+      const mcInfo = result.microCompactClearedCount > 0 ? `, micro-cleared ${result.microCompactClearedCount}` : "";
+      yield { type: "command", kind: "info", message: `[compact] done: ${beforeCount} → ${this.messages.length} messages (tail preserved${mcInfo})` };
+
+      // Sync compacted messages to transcript for --resume
+      void rewriteTranscriptMessages(this.toolContext.cwd, this.sessionId, this.messages);
 
       void appendEntry(this.toolContext.cwd, this.sessionId, createSystemEntry({
         level: "info",

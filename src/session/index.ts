@@ -3,6 +3,7 @@ export {
   getSessionPaths,
   initSession,
   appendEntry,
+  rewriteTranscriptMessages,
   restoreSession,
   listProjectSessions,
   formatSessionHistory,

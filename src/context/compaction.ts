@@ -26,18 +26,18 @@ function microCompactMessage(message: MessageParam): { message: MessageParam; cl
   return { message: { ...message, content }, cleared };
 }
 
-export function microCompactMessages(messages: MessageParam[]): { messages: MessageParam[]; didClear: boolean } {
-  if (messages.length < MICROCOMPACT_MIN_MESSAGES) return { messages, didClear: false };
+export function microCompactMessages(messages: MessageParam[]): { messages: MessageParam[]; clearedCount: number } {
+  if (messages.length < MICROCOMPACT_MIN_MESSAGES) return { messages, clearedCount: 0 };
 
-  let didClear = false;
+  let clearedCount = 0;
   const result = messages.map((msg, i) => {
     if (i >= messages.length - MICROCOMPACT_KEEP_RECENT) return msg;
     const { message, cleared } = microCompactMessage(msg);
-    if (cleared) didClear = true;
+    if (cleared) clearedCount++;
     return message;
   });
 
-  return { messages: result, didClear };
+  return { messages: result, clearedCount };
 }
 
 // ─── Tail Preservation ───────────────────────────────────────
@@ -92,7 +92,7 @@ export interface CompactResult {
   messages: MessageParam[];
   summary?: string;
   didCompact: boolean;
-  didMicroCompact: boolean;
+  microCompactClearedCount: number;
 }
 
 export async function compactMessages(
@@ -101,12 +101,12 @@ export async function compactMessages(
   options?: CompactOptions,
 ): Promise<CompactResult> {
   // Step 1: micro-compact first (free)
-  const { messages: microCompacted, didClear } = microCompactMessages(messages);
+  const { messages: microCompacted, clearedCount } = microCompactMessages(messages);
 
   // Step 2: check budget
   const budget = buildTokenBudgetSnapshot(microCompacted, options);
   if (!options?.force && budget.estimatedTokens < budget.autoCompactThreshold) {
-    return { messages: microCompacted, didCompact: false, didMicroCompact: didClear };
+    return { messages: microCompacted, didCompact: false, microCompactClearedCount: clearedCount };
   }
 
   // Step 3: generate summary via model
@@ -140,5 +140,5 @@ export async function compactMessages(
     ...tail,
   ];
 
-  return { messages: compacted, summary, didCompact: true, didMicroCompact: didClear };
+  return { messages: compacted, summary, didCompact: true, microCompactClearedCount: clearedCount };
 }
