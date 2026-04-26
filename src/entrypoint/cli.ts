@@ -27,6 +27,12 @@ async function main(): Promise<void> {
   const modelIndex = process.argv.indexOf("--model");
   const model = modelIndex !== -1 ? process.argv[modelIndex + 1] : undefined;
 
+  // 解析 --mode 参数
+  const modeIndex = process.argv.indexOf("--mode");
+  const permissionMode = modeIndex !== -1 ? process.argv[modeIndex + 1] : undefined;
+  const validModes = ["default", "plan", "auto"];
+  const resolvedMode = validModes.includes(permissionMode || "") ? permissionMode as "default" | "plan" | "auto" | undefined : undefined;
+
   // 动态 import React/Ink（只在真正需要时加载）
   const React = await import("react");
   const { render } = await import("ink");
@@ -40,7 +46,7 @@ async function main(): Promise<void> {
   const toolsApiParams = getToolsApiParams();
 
   const { waitUntilExit } = render(
-    React.createElement(App, { model: resolvedModel, system, toolsApiParams }),
+    React.createElement(App, { model: resolvedModel, system, toolsApiParams, permissionMode: resolvedMode }),
     { exitOnCtrlC: false },
   );
   await waitUntilExit();

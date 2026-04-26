@@ -77,6 +77,8 @@ export interface StreamErrorEvent {
 
 // ─── Agentic Loop Events (extends stream events) ───────────────
 
+import type { PermissionRequest } from "../permissions/types.js";
+
 export interface ToolUseCallEvent {
   type: "tool_use_call";
   id: string;
@@ -102,12 +104,18 @@ export interface ToolResultMessageEvent {
   message: MessageParam;
 }
 
+export interface PermissionRequestEvent {
+  type: "permission_request";
+  request: PermissionRequest;
+}
+
 export type LoopEvent =
   | StreamEvent
   | ToolUseCallEvent
   | ToolUseDoneEvent
   | AssistantMessageEvent
-  | ToolResultMessageEvent;
+  | ToolResultMessageEvent
+  | PermissionRequestEvent;
 
 export type LoopTerminationReason = "completed" | "aborted" | "model_error" | "max_turns";
 

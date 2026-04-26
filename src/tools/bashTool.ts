@@ -18,7 +18,7 @@ const READONLY_GIT_SUBCOMMANDS = new Set([
   "status", "log", "diff", "branch", "tag", "remote", "show", "rev-parse",
 ]);
 
-function isReadOnlyCommand(command: string): boolean {
+export function isReadOnlyCommand(command: string): boolean {
   // Split by && || | ;
   const segments = command
     .split(/(?:&&|\|\||;|\|)/)
@@ -36,6 +36,28 @@ function isReadOnlyCommand(command: string): boolean {
 
     return READONLY_COMMANDS.has(cmd);
   });
+}
+
+// ─── Dangerous Command Detection ─────────────────────────────────
+
+const DANGEROUS_PREFIXES = [
+  "rm ",
+  "rm\t",
+  "sudo ",
+  "sudo\t",
+  "git push",
+  "git reset --hard",
+  "shutdown",
+  "reboot",
+  "mkfs",
+  "dd if=",
+  "> /dev/",
+  "chmod 777",
+];
+
+export function isDangerousCommand(command: string): boolean {
+  const normalized = command.trim().replace(/\s+/g, " ").toLowerCase();
+  return DANGEROUS_PREFIXES.some((prefix) => normalized.startsWith(prefix));
 }
 
 // ─── Output Truncation ──────────────────────────────────────────

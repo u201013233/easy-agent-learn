@@ -3,6 +3,8 @@ import { streamMessage } from "../services/stream.js";
 import type { LoopEvent, LoopTerminationReason, Usage, ContentBlock, ToolUseBlock, ToolResultBlock } from "../types/message.js";
 import { findToolByName } from "../tools/index.js";
 import type { ToolContext } from "../tools/types.js";
+import { checkPermission } from "../permissions/checker.js";
+import type { PermissionMode, PermissionBehavior } from "../permissions/types.js";
 
 // ─── Types ──────────────────────────────────────────────────────
 
@@ -14,6 +16,9 @@ export interface QueryParams {
   signal?: AbortSignal;
   toolContext?: ToolContext;
   maxTurns?: number;
+  permissionMode?: PermissionMode;
+  sessionAllowRules?: string[];
+  onPermissionRequest?: (request: import("../permissions/types.js").PermissionRequest) => Promise<PermissionBehavior>;
 }
 
 export interface QueryResult {
@@ -170,7 +175,22 @@ export async function* query(
         }
       }
 
-      const toolResultMsg = await runTools(contentBlocks, toolContext, params.signal);
+      const toolResultMsg = await runTools(
+        contentBlocks,
+        toolContext,
+        params.signal,
+        {
+          permissionMode: params.permissionMode ?? "default",
+          sessionAllowRules: params.sessionAllowRules ?? [],
+          onPermissionRequest: params.onPermissionRequest,
+        },
+      );
+
+      // Yield permission request events (ask mode)
+      for (const permReq of toolResultMsg.permissionEvents) {
+        yield { type: "permission_request", request: permReq };
+      }
+
       state = {
         ...state,
         messages: [...state.messages, toolResultMsg.message],
@@ -225,13 +245,24 @@ interface ToolExecutionResult {
   details: ToolExecutionDetail[];
 }
 
+interface RunToolsOptions {
+  permissionMode: PermissionMode;
+  sessionAllowRules: string[];
+  onPermissionRequest?: (request: import("../permissions/types.js").PermissionRequest) => Promise<PermissionBehavior>;
+}
+
 async function runTools(
   contentBlocks: ContentBlock[],
   toolContext: ToolContext,
   signal?: AbortSignal,
-): Promise<ToolExecutionResult> {
+  options?: RunToolsOptions,
+): Promise<{ message: MessageParam; details: ToolExecutionDetail[]; permissionEvents: import("../permissions/types.js").PermissionRequest[] }> {
   const results: ToolResultBlock[] = [];
   const details: ToolExecutionDetail[] = [];
+  const permissionEvents: import("../permissions/types.js").PermissionRequest[] = [];
+  const permMode = options?.permissionMode ?? "default";
+  const sessionRules = options?.sessionAllowRules ?? [];
+  const onPermRequest = options?.onPermissionRequest;
 
   for (const block of contentBlocks) {
     if (block.type !== "tool_use") continue;
@@ -260,6 +291,60 @@ async function runTools(
       continue;
     }
 
+    // ── Permission Check ──
+    const permResult = checkPermission({
+      toolName: tool.name,
+      toolUseId: toolUseBlock.id,
+      input: toolUseBlock.input,
+      toolIsReadOnly: tool.isReadOnly(),
+      mode: permMode,
+      sessionAllowRules: sessionRules,
+    });
+
+    process.stderr.write(`[perm] ${tool.name}: ${permResult.behavior} (${permResult.request.reason})\n`);
+
+    // Deny → return error tool_result
+    if (permResult.behavior === "deny") {
+      const denyContent = `Permission denied: ${permResult.request.reason}`;
+      results.push({
+        type: "tool_result",
+        tool_use_id: toolUseBlock.id,
+        content: denyContent,
+        is_error: true,
+      });
+      details.push({
+        id: toolUseBlock.id,
+        name: tool.name,
+        resultLength: denyContent.length,
+        isError: true,
+      });
+      continue;
+    }
+
+    // Ask → collect permission event, wait for user decision
+    if (permResult.behavior === "ask" && onPermRequest) {
+      permissionEvents.push(permResult.request);
+      const decision = await onPermRequest(permResult.request);
+
+      if (decision === "deny") {
+        const denyContent = `Permission denied by user`;
+        results.push({
+          type: "tool_result",
+          tool_use_id: toolUseBlock.id,
+          content: denyContent,
+          is_error: true,
+        });
+        details.push({
+          id: toolUseBlock.id,
+          name: tool.name,
+          resultLength: denyContent.length,
+          isError: true,
+        });
+        continue;
+      }
+    }
+
+    // Allow (or ask approved) → execute
     process.stderr.write(`[tool] calling ${toolUseBlock.name}(${JSON.stringify(toolUseBlock.input)})\n`);
 
     try {
@@ -299,5 +384,6 @@ async function runTools(
   return {
     message: { role: "user", content: results } as MessageParam,
     details,
+    permissionEvents,
   };
 }
