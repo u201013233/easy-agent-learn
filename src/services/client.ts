@@ -41,8 +41,6 @@ export function getAnthropicClient(options?: {
     baseURL: options?.baseURL ?? process.env.ANTHROPIC_BASE_URL,
   });
 
-  console.log("aaa", options?.apiKey);
-  console.log("bbbb", options?.baseURL);  
 
   if (!options) {
     clientInstance = client;
