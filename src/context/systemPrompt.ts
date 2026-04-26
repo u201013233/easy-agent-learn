@@ -1,7 +1,7 @@
 import os from "node:os";
 import { buildGitSection } from "./git.js";
 import { loadAgentMd } from "./agentMd.js";
-import { readMemoryEntrypoint } from "../memory/index.js";
+import { readMemoryEntrypoint, getMemoryDir } from "../memory/index.js";
 
 // ─── Build System Prompt ───────────────────────────────────────
 
@@ -62,7 +62,12 @@ export async function buildSystemPrompt(
   // Project Memory index
   const memoryContent = await readMemoryEntrypoint(cwd);
   if (memoryContent) {
-    dynamicParts.push(`<PROJECT_MEMORY>\n${memoryContent}</PROJECT_MEMORY>`);
+    const memoryDir = getMemoryDir(cwd);
+    dynamicParts.push(`<PROJECT_MEMORY>
+Memory directory: ${memoryDir}
+You can use the Read tool to read any memory file listed below for full details.
+
+${memoryContent}</PROJECT_MEMORY>`);
   }
 
   dynamicParts.push("</SYSTEM_DYNAMIC_CONTEXT>");
