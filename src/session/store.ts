@@ -254,6 +254,15 @@ export async function restoreSession(cwd: string, sessionId?: string | null): Pr
     .filter((e): e is Extract<TranscriptEntry, { type: "message" }> => e.type === "message")
     .map((e) => e.message);
 
+  // If this session has no messages and no sessionId was specified, find the latest non-empty session
+  if (messages.length === 0 && sessionId == null) {
+    const sessions = await listProjectSessions(cwd);
+    const nonEmpty = sessions.find((s) => s.messageCount > 0);
+    if (nonEmpty) {
+      return restoreSession(cwd, nonEmpty.sessionId);
+    }
+  }
+
   const latestUsage = [...entries].reverse().find(
     (e): e is Extract<TranscriptEntry, { type: "usage" }> => e.type === "usage",
   );
