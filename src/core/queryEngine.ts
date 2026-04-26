@@ -13,7 +13,6 @@ import {
   createToolEventEntry,
   createUsageEntry,
   createSystemEntry,
-  formatSessionHistory,
 } from "../session/index.js";
 import { compactMessages } from "../context/compaction.js";
 import { buildTokenBudgetSnapshot } from "../context/tokens.js";
@@ -394,12 +393,7 @@ export class QueryEngine {
 
     // /history
     if (command === "/history") {
-      try {
-        const historyText = await formatSessionHistory(this.toolContext.cwd);
-        yield { type: "command", kind: "info", message: historyText };
-      } catch {
-        yield { type: "command", kind: "info", message: `${this.messages.length} messages in current session.` };
-      }
+      yield { type: "command", kind: "info", message: `Current session: ${this.messages.length} messages (id: ${this.sessionId})` };
       return { handled: true };
     }
 
