@@ -175,6 +175,8 @@ export class QueryEngine {
     };
 
     try {
+      yield { type: "command", kind: "info", message: `[compact] start: ${this.messages.length} messages` };
+
       const result = await compactMessages(
         [...this.messages],
         callModel,
@@ -188,21 +190,21 @@ export class QueryEngine {
 
       if (!result.didCompact) {
         const msg = result.didMicroCompact
-          ? "Micro-compacted old tool results (no full compaction needed)."
-          : "Context is within budget, no compaction needed.";
+          ? `[compact] micro-compacted old tool results (no full compaction needed). ${this.messages.length} messages.`
+          : `[compact] context within budget, no compaction needed. ${this.messages.length} messages.`;
         yield { type: "command", kind: "info", message: msg };
         return { handled: true };
       }
 
       // Apply compaction
+      const beforeCount = this.messages.length;
       this.messages = result.messages;
       this.usageAnchorIndex = -1;
       this.lastCallUsage = null;
 
       yield { type: "messages_updated", messages: [...this.messages] };
 
-      const beforeCount = result.didMicroCompact ? " (after micro-compact)" : "";
-      yield { type: "command", kind: "info", message: `Context compacted${beforeCount}. ${this.messages.length} messages remain.` };
+      yield { type: "command", kind: "info", message: `[compact] done: ${beforeCount} → ${this.messages.length} messages (tail preserved)` };
 
       void appendEntry(this.toolContext.cwd, this.sessionId, createSystemEntry({
         level: "info",
@@ -284,6 +286,7 @@ export class QueryEngine {
           usage: this.lastCallUsage,
           usageAnchorIndex: this.usageAnchorIndex,
         });
+        yield { type: "command", kind: "info", message: `[compact] check: estimated=${budget.estimatedTokens.toLocaleString()}, threshold=${budget.autoCompactThreshold.toLocaleString()}, over=${budget.estimatedTokens >= budget.autoCompactThreshold}` };
         if (budget.estimatedTokens >= budget.autoCompactThreshold) {
           yield* this.runCompaction();
         }

@@ -88,10 +88,12 @@ export function buildTokenBudgetSnapshot(
 ): TokenBudgetSnapshot {
   const estimatedTokens = tokenCountWithEstimation(messages, options);
   const effectiveWindow = MODEL_CONTEXT_WINDOW - 20_000; // reserve for system prompt
-  return {
+  const snapshot = {
     estimatedTokens,
     contextWindow: MODEL_CONTEXT_WINDOW,
     effectiveWindow,
     autoCompactThreshold: effectiveWindow - AUTOCOMPACT_BUFFER_TOKENS,
   };
+  return snapshot;
 }
+
