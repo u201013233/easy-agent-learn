@@ -74,9 +74,12 @@ export function App({engine}: AppProps): React.ReactNode {
                 const req = permissionRequest;
                 if (req.toolName === "Bash") {
                     const cmd = (req.input.command as string) || "";
-                    sessionAllowRulesRef.current = [...sessionAllowRulesRef.current, `Bash(command=${cmd}*)`];
+                    const rule = `Bash(command=${cmd}*)`;
+                    sessionAllowRulesRef.current = [...sessionAllowRulesRef.current, rule];
+                    engineRef.current.addSessionAllowRule(rule);
                 } else {
                     sessionAllowRulesRef.current = [...sessionAllowRulesRef.current, req.toolName];
+                    engineRef.current.addSessionAllowRule(req.toolName);
                 }
                 permissionResolveRef.current("allow");
                 permissionResolveRef.current = null;

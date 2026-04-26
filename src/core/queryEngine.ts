@@ -92,6 +92,10 @@ export class QueryEngine {
     this.onPermissionRequest = handler;
   }
 
+  addSessionAllowRule(rule: string): void {
+    this.sessionAllowRules = [...this.sessionAllowRules, rule];
+  }
+
   interrupt(): boolean {
     if (!this.abortController) return false;
     this.abortController.abort();
