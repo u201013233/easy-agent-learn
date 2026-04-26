@@ -37,16 +37,19 @@ async function main(): Promise<void> {
   const React = await import("react");
   const { render } = await import("ink");
   const { App } = await import("../ui/App.js");
+  const { QueryEngine } = await import("../core/queryEngine.js");
   const { DEFAULT_MODEL } = await import("../services/client.js");
-  const { getToolsApiParams } = await import("../tools/index.js");
-  const { buildSystemPrompt } = await import("../context/systemPrompt.js");
 
   const resolvedModel = model ?? DEFAULT_MODEL;
-  const system = await buildSystemPrompt({ cwd: process.cwd() });
-  const toolsApiParams = getToolsApiParams();
+
+  const engine = new QueryEngine({
+    model: resolvedModel,
+    toolContext: { cwd: process.cwd() },
+    permissionMode: resolvedMode,
+  });
 
   const { waitUntilExit } = render(
-    React.createElement(App, { model: resolvedModel, system, toolsApiParams, permissionMode: resolvedMode }),
+    React.createElement(App, { engine }),
     { exitOnCtrlC: false },
   );
   await waitUntilExit();

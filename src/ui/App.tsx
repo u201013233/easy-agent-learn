@@ -1,18 +1,14 @@
 import React, {useRef, useState, useCallback} from "react";
 import {Box, Text, useApp, useInput} from "ink";
 import {MessageParam} from "@anthropic-ai/sdk/resources/messages.js";
-import {query} from "../core/agenticLoop.js";
+import type {QueryEngine, QueryEngineEvent} from "../core/queryEngine.js";
 import type {LoopEvent, ContentBlock} from "../types/message.js";
 import {ToolCallInfo} from "./type.js";
-import Anthropic from "@anthropic-ai/sdk";
 import {Spinner} from "./components/Spinner.js";
-import type {PermissionRequest, PermissionBehavior, PermissionMode} from "../permissions/types.js";
+import type {PermissionRequest, PermissionBehavior} from "../permissions/types.js";
 
 interface AppProps {
-    model: string;
-    toolsApiParams: Anthropic.Tool[];
-    system?: string;
-    permissionMode?: PermissionMode;
+    engine: QueryEngine;
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────
@@ -34,14 +30,12 @@ function permissionRiskColor(level: string): string {
     }
 }
 
-export function App({model, system, toolsApiParams, permissionMode}: AppProps): React.ReactNode {
+export function App({engine}: AppProps): React.ReactNode {
     const {exit} = useApp();
 
-    // 对话数据
+    // UI 状态
     const [messages, setMessages] = useState<MessageParam[]>([]);
     const [inputValue, setInputValue] = useState("");
-
-    // UI 状态
     const [isLoading, setIsLoading] = useState(false);
     const [spinnerLabel, setSpinnerLabel] = useState("Thinking");
     const [streamingText, setStreamingText] = useState("");
@@ -49,6 +43,7 @@ export function App({model, system, toolsApiParams, permissionMode}: AppProps): 
     const [lastUsage, setLastUsage] = useState<{ input: number; output: number } | null>(null);
     const [infoMessage, setInfoMessage] = useState<string | null>(null);
     const [errorText, setErrorText] = useState<string | null>(null);
+    const [activeModel, setActiveModel] = useState(engine.getActiveModel());
 
     // 权限确认状态
     const [permissionRequest, setPermissionRequest] = useState<PermissionRequest | null>(null);
@@ -57,8 +52,8 @@ export function App({model, system, toolsApiParams, permissionMode}: AppProps): 
 
     // 中断控制
     const abortRef = useRef<AbortController | null>(null);
-    const messagesRef = useRef<MessageParam[]>([]);
-    messagesRef.current = messages;
+    const engineRef = useRef(engine);
+    engineRef.current = engine;
 
     useInput((input, key) => {
         // 权限确认模式下处理按键
@@ -76,7 +71,6 @@ export function App({model, system, toolsApiParams, permissionMode}: AppProps): 
                 return;
             }
             if (input === "a") {
-                // Always allow: add session rule
                 const req = permissionRequest;
                 if (req.toolName === "Bash") {
                     const cmd = (req.input.command as string) || "";
@@ -147,19 +141,9 @@ export function App({model, system, toolsApiParams, permissionMode}: AppProps): 
             if (!text.trim()) return;
             const trimmed = text.trim();
 
-            // Slash commands 本地拦截
+            // /exit /quit 由 UI 层处理（QueryEngine 不处理退出）
             if (trimmed === "/exit" || trimmed === "/quit") {
                 exit();
-                return;
-            }
-            if (trimmed === "/clear") {
-                setMessages([]);
-                messagesRef.current = [];
-                setInfoMessage("Conversation cleared.");
-                return;
-            }
-            if (trimmed === "/history") {
-                setInfoMessage(`${messagesRef.current.length} messages in conversation.`);
                 return;
             }
 
@@ -171,47 +155,50 @@ export function App({model, system, toolsApiParams, permissionMode}: AppProps): 
             setIsLoading(true);
             setSpinnerLabel("Thinking");
 
-            // 追加 user message
-            const userMsg: MessageParam = {role: "user", content: trimmed};
-            const updatedMessages = [...messagesRef.current, userMsg];
-            setMessages(updatedMessages);
-            messagesRef.current = updatedMessages;
-
-            const abort = new AbortController();
-            abortRef.current = abort;
+            // 设置权限回调
+            engineRef.current.setOnPermissionRequest(handlePermissionRequest);
 
             try {
-                const loop = query({
-                    messages: updatedMessages,
-                    model,
-                    system,
-                    tools: toolsApiParams.length > 0 ? toolsApiParams : undefined,
-                    signal: abort.signal,
-                    permissionMode: permissionMode ?? "default",
-                    sessionAllowRules: sessionAllowRulesRef.current,
-                    onPermissionRequest: handlePermissionRequest,
-                });
+                const generator = engineRef.current.submitMessage(trimmed);
 
                 while (true) {
-                    const {value, done} = await loop.next();
+                    const {value, done} = await generator.next();
                     if (done) {
-                        // 最终结果
                         const result = value;
-                        setMessages(result.messages);
-                        messagesRef.current = result.messages;
-                        setLastUsage({
-                            input: result.usage.input_tokens,
-                            output: result.usage.output_tokens,
-                        });
-
-                        if (result.terminationReason === "aborted" || abort.signal.aborted) {
-                            setInfoMessage("Interrupted.");
+                        if (result.handled && result.terminationReason) {
+                            // QueryEngine 内部已更新 messages，从 getState 同步
                         }
                         break;
                     }
 
-                    const event = value as LoopEvent;
+                    const event = value as QueryEngineEvent;
+
                     switch (event.type) {
+                        // ── 会话级事件 ──
+                        case "messages_updated":
+                            setMessages([...event.messages]);
+                            break;
+
+                        case "usage_updated":
+                            setLastUsage({
+                                input: event.turnUsage.input_tokens,
+                                output: event.turnUsage.output_tokens,
+                            });
+                            break;
+
+                        case "command":
+                            if (event.kind === "error") {
+                                setErrorText(event.message);
+                            } else {
+                                setInfoMessage(event.message);
+                            }
+                            break;
+
+                        case "model_changed":
+                            setActiveModel(event.model);
+                            break;
+
+                        // ── Loop 事件透传 ──
                         case "text":
                             setStreamingText((prev) => prev + event.text);
                             break;
@@ -243,14 +230,14 @@ export function App({model, system, toolsApiParams, permissionMode}: AppProps): 
                             break;
 
                         case "assistant_message":
-                            setMessages((prev) => [...prev, event.message]);
-                            messagesRef.current = [...messagesRef.current, event.message];
                             setStreamingText("");
                             break;
 
                         case "tool_result_message":
-                            setMessages((prev) => [...prev, event.message]);
-                            messagesRef.current = [...messagesRef.current, event.message];
+                            break;
+
+                        case "permission_request":
+                            // QueryEngine 透传 permission_request，UI 处理显示
                             break;
 
                         case "error":
@@ -270,7 +257,7 @@ export function App({model, system, toolsApiParams, permissionMode}: AppProps): 
                 abortRef.current = null;
             }
         },
-        [exit, model, system, toolsApiParams, permissionMode, handlePermissionRequest],
+        [exit, handlePermissionRequest],
     );
 
     return (
@@ -278,14 +265,11 @@ export function App({model, system, toolsApiParams, permissionMode}: AppProps): 
             {/* 头部 */}
             <Box marginBottom={1}>
                 <Text bold color="cyan">Easy Agent</Text>
-                <Text dimColor> ({model})</Text>
-                {permissionMode && permissionMode !== "default" && (
-                    <Text color="yellow"> [{permissionMode}]</Text>
-                )}
+                <Text dimColor> ({activeModel})</Text>
             </Box>
             <Text dimColor>Type a message to start. Ctrl+C to interrupt, Ctrl+D to exit.</Text>
 
-            {/* 对话历史：user + assistant 交替 */}
+            {/* 对话历史 */}
             {messages.map((msg, i) => {
                 if (msg.role === "user" && typeof msg.content === "string") {
                     return (
@@ -343,10 +327,10 @@ export function App({model, system, toolsApiParams, permissionMode}: AppProps): 
                 </Box>
             )}
 
-            {/* Spinner：等待 API 响应时显示 */}
+            {/* Spinner */}
             {isLoading && !streamingText && !permissionRequest && <Spinner label={spinnerLabel}/>}
 
-            {/* 流式文本：API 正在回复时实时显示 */}
+            {/* 流式文本 */}
             {isLoading && streamingText && (
                 <Box>
                     <Text color="magenta">{"▎ "}</Text>
