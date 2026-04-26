@@ -56,7 +56,7 @@ export async function* streamMessage(
     switch (event.type) {
       case "message_start":
         usage.input_tokens = event.message.usage.input_tokens;
-        yield { type: "message_start", messageId: event.message.id, usage: { input_tokens: usage.input_tokens, output_tokens: 0 } };
+        yield { type: "message_start", messageId: event.message.id };
         break;
 
       case "content_block_start":
@@ -92,6 +92,9 @@ export async function* streamMessage(
 
       case "message_delta":
         usage.output_tokens = event.usage.output_tokens;
+        if (event.usage.input_tokens != null) {
+          usage.input_tokens = event.usage.input_tokens;
+        }
         stopReason = event.delta.stop_reason ?? "";
         break;
 

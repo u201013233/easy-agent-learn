@@ -94,11 +94,6 @@ export async function* query(
 
         const event = next.value;
 
-        // Track usage from message_start (input_tokens) even if streaming is interrupted
-        if (event.type === "message_start") {
-          totalUsage.input_tokens += event.usage?.input_tokens ?? 0;
-        }
-
         // Propagate stream events to UI
         yield event;
 
@@ -135,6 +130,7 @@ export async function* query(
     }
 
     // Accumulate usage (input_tokens already tracked from message_start event)
+    totalUsage.input_tokens += result.usage.input_tokens;
     totalUsage.output_tokens += result.usage.output_tokens;
 
     // 4. Append assistant message
