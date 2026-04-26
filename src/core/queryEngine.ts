@@ -4,6 +4,7 @@ import type { LoopEvent, Usage } from "../types/message.js";
 import { buildSystemPrompt } from "../context/systemPrompt.js";
 import { getToolsApiParams } from "../tools/index.js";
 import type { PermissionMode, PermissionRequest, PermissionBehavior } from "../permissions/types.js";
+import { getAnthropicClient, DEFAULT_MODEL } from "../services/client.js";
 import {
   createSessionId,
   initSession,
@@ -14,6 +15,8 @@ import {
   createSystemEntry,
   formatSessionHistory,
 } from "../session/index.js";
+import { compactMessages } from "../context/compaction.js";
+import { buildTokenBudgetSnapshot } from "../context/tokens.js";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -88,6 +91,8 @@ export class QueryEngine {
   private abortController: AbortController | null = null;
   private onPermissionRequest?: (request: PermissionRequest) => Promise<PermissionBehavior>;
   private readonly isResumed: boolean;
+  private lastCallUsage: Usage | null = null;
+  private usageAnchorIndex: number = -1;
 
   constructor(options: QueryEngineOptions) {
     this.defaultModel = options.model;
@@ -142,13 +147,74 @@ export class QueryEngine {
     this.sessionAllowRules = [...this.sessionAllowRules, rule];
   }
 
-  static COMMANDS = ["/help", "/clear", "/cost", "/model", "/history"] as const;
+  static COMMANDS = ["/help", "/clear", "/cost", "/model", "/history", "/compact"] as const;
 
   interrupt(): boolean {
     if (!this.abortController) return false;
     this.abortController.abort();
     this.abortController = null;
     return true;
+  }
+
+  // ─── Compaction ────────────────────────────────────────────
+
+  private async *runCompaction(
+    focus?: string,
+    force?: boolean,
+  ): AsyncGenerator<QueryEngineEvent, SubmitResult> {
+    const callModel = async (system: string, messages: MessageParam[]): Promise<string> => {
+      const client = getAnthropicClient();
+      const response = await client.messages.create({
+        model: this.getActiveModel(),
+        max_tokens: 4096,
+        system,
+        messages,
+      });
+      const textBlock = response.content?.[0];
+      return typeof textBlock === "object" && "text" in textBlock ? textBlock.text : String(textBlock);
+    };
+
+    try {
+      const result = await compactMessages(
+        [...this.messages],
+        callModel,
+        {
+          usage: this.lastCallUsage ?? undefined,
+          usageAnchorIndex: this.usageAnchorIndex,
+          focus,
+          force,
+        },
+      );
+
+      if (!result.didCompact) {
+        const msg = result.didMicroCompact
+          ? "Micro-compacted old tool results (no full compaction needed)."
+          : "Context is within budget, no compaction needed.";
+        yield { type: "command", kind: "info", message: msg };
+        return { handled: true };
+      }
+
+      // Apply compaction
+      this.messages = result.messages;
+      this.usageAnchorIndex = -1;
+      this.lastCallUsage = null;
+
+      yield { type: "messages_updated", messages: [...this.messages] };
+
+      const beforeCount = result.didMicroCompact ? " (after micro-compact)" : "";
+      yield { type: "command", kind: "info", message: `Context compacted${beforeCount}. ${this.messages.length} messages remain.` };
+
+      void appendEntry(this.toolContext.cwd, this.sessionId, createSystemEntry({
+        level: "info",
+        message: `Context compacted: ${this.messages.length} messages remain.`,
+      }));
+
+      return { handled: true };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      yield { type: "command", kind: "error", message: `Compaction failed: ${msg}` };
+      return { handled: true };
+    }
   }
 
   // ─── Submit Message ───────────────────────────────────────────
@@ -201,6 +267,10 @@ export class QueryEngine {
         this.totalUsage.input_tokens += result.usage.input_tokens;
         this.totalUsage.output_tokens += result.usage.output_tokens;
 
+        // Track last API usage for token budget estimation
+        this.lastCallUsage = { ...result.usage };
+        this.usageAnchorIndex = this.messages.length - 1;
+
         yield { type: "usage_updated", totalUsage: { ...this.totalUsage }, turnUsage: { ...result.usage } };
 
         // Persist usage
@@ -208,6 +278,15 @@ export class QueryEngine {
           turn: result.usage,
           total: { ...this.totalUsage },
         }));
+
+        // Auto-compact check
+        const budget = buildTokenBudgetSnapshot(this.messages, {
+          usage: this.lastCallUsage,
+          usageAnchorIndex: this.usageAnchorIndex,
+        });
+        if (budget.estimatedTokens >= budget.autoCompactThreshold) {
+          yield* this.runCompaction();
+        }
 
         return { handled: true, terminationReason: result.terminationReason };
       }
@@ -252,6 +331,7 @@ export class QueryEngine {
             case "/cost": return "  /cost          Show total token usage";
             case "/model": return "  /model [name]   Show or switch model";
             case "/history": return "  /history       Show project session history";
+            case "/compact": return "  /compact [focus]  Compact context to save tokens";
             default: return `  ${cmd}`;
           }
         }),
@@ -317,6 +397,13 @@ export class QueryEngine {
       } catch {
         yield { type: "command", kind: "info", message: `${this.messages.length} messages in current session.` };
       }
+      return { handled: true };
+    }
+
+    // /compact
+    if (command === "/compact" || command.startsWith("/compact ")) {
+      const focus = command === "/compact" ? undefined : command.slice("/compact ".length).trim() || undefined;
+      yield* this.runCompaction(focus, true);
       return { handled: true };
     }
 
