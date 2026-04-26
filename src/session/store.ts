@@ -8,7 +8,7 @@ import type { Usage } from "../types/message.js";
 // ─── Constants ──────────────────────────────────────────────
 
 const EASY_AGENT_HOME = path.join(os.homedir(), ".easy-agent");
-const PROJECTS_DIR = path.join(EASY_AGENT_HOME, "projects");
+export const PROJECTS_DIR = path.join(EASY_AGENT_HOME, "projects");
 const MAX_SESSIONS = 20;
 
 // ─── Types ──────────────────────────────────────────────────

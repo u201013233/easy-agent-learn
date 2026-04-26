@@ -6,6 +6,7 @@ import { editTool } from "./editTool.js";
 import { grepTool } from "./grepTool.js";
 import { globTool } from "./globTool.js";
 import { bashTool } from "./bashTool.js";
+import { memoryWriteTool } from "./memoryWriteTool.js";
 
 // ─── Tool Registry ───────────────────────────────────────────────
 
@@ -16,6 +17,7 @@ export const allTools: Tool[] = [
   grepTool,
   globTool,
   bashTool,
+  memoryWriteTool,
 ];
 
 export function findToolByName(name: string): Tool | undefined {

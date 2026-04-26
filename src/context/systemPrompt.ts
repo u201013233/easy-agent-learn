@@ -1,6 +1,7 @@
 import os from "node:os";
 import { buildGitSection } from "./git.js";
 import { loadAgentMd } from "./agentMd.js";
+import { readMemoryEntrypoint } from "../memory/index.js";
 
 // ─── Build System Prompt ───────────────────────────────────────
 
@@ -56,6 +57,12 @@ export async function buildSystemPrompt(
   const agentMdContent = await loadAgentMd(cwd);
   if (agentMdContent) {
     dynamicParts.push(agentMdContent);
+  }
+
+  // Project Memory index
+  const memoryContent = await readMemoryEntrypoint(cwd);
+  if (memoryContent) {
+    dynamicParts.push(`<PROJECT_MEMORY>\n${memoryContent}</PROJECT_MEMORY>`);
   }
 
   dynamicParts.push("</SYSTEM_DYNAMIC_CONTEXT>");
