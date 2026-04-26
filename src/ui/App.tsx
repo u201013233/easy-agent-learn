@@ -35,14 +35,16 @@ export function App({engine}: AppProps): React.ReactNode {
     const {exit} = useApp();
 
     // UI 状态
-    const [messages, setMessages] = useState<MessageParam[]>([]);
+    const [messages, setMessages] = useState<MessageParam[]>(() => engine.getState().messages);
     const [inputValue, setInputValue] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [spinnerLabel, setSpinnerLabel] = useState("Thinking");
     const [streamingText, setStreamingText] = useState("");
     const [toolCalls, setToolCalls] = useState<ToolCallInfo[]>([]);
     const [lastUsage, setLastUsage] = useState<{ input: number; output: number } | null>(null);
-    const [infoMessage, setInfoMessage] = useState<string | null>(null);
+    const [infoMessage, setInfoMessage] = useState<string | null>(
+        engine.getIsResumed() ? `Session resumed: ${engine.getSessionId()} (${engine.getState().messages.length} messages)` : null,
+    );
     const [errorText, setErrorText] = useState<string | null>(null);
     const [activeModel, setActiveModel] = useState(engine.getActiveModel());
 

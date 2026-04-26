@@ -4,6 +4,16 @@ import type { LoopEvent, Usage } from "../types/message.js";
 import { buildSystemPrompt } from "../context/systemPrompt.js";
 import { getToolsApiParams } from "../tools/index.js";
 import type { PermissionMode, PermissionRequest, PermissionBehavior } from "../permissions/types.js";
+import {
+  createSessionId,
+  initSession,
+  appendEntry,
+  createMessageEntry,
+  createToolEventEntry,
+  createUsageEntry,
+  createSystemEntry,
+  formatSessionHistory,
+} from "../session/index.js";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -36,12 +46,19 @@ export interface ModelChangedEvent {
   model: string;
 }
 
+export interface SessionResumedEvent {
+  type: "session_resumed";
+  sessionId: string;
+  messageCount: number;
+}
+
 export type QueryEngineEvent =
   | LoopEvent
   | MessagesUpdatedEvent
   | UsageUpdatedEvent
   | CommandEvent
-  | ModelChangedEvent;
+  | ModelChangedEvent
+  | SessionResumedEvent;
 
 export interface SubmitResult {
   handled: boolean;
@@ -52,13 +69,17 @@ export interface QueryEngineOptions {
   model: string;
   toolContext: { cwd: string };
   permissionMode?: PermissionMode;
+  sessionId?: string;
+  initialMessages?: MessageParam[];
+  initialUsage?: Usage;
 }
 
 // ─── QueryEngine ──────────────────────────────────────────────
 
 export class QueryEngine {
-  private messages: MessageParam[] = [];
-  private totalUsage: Usage = { input_tokens: 0, output_tokens: 0 };
+  private messages: MessageParam[];
+  private totalUsage: Usage;
+  private readonly sessionId: string;
   private readonly defaultModel: string;
   private sessionModelOverride: string | null = null;
   private readonly toolContext: { cwd: string };
@@ -66,14 +87,39 @@ export class QueryEngine {
   private sessionAllowRules: string[] = [];
   private abortController: AbortController | null = null;
   private onPermissionRequest?: (request: PermissionRequest) => Promise<PermissionBehavior>;
+  private readonly isResumed: boolean;
 
   constructor(options: QueryEngineOptions) {
     this.defaultModel = options.model;
     this.toolContext = options.toolContext;
     this.permissionMode = options.permissionMode ?? "default";
+    this.sessionId = options.sessionId ?? createSessionId();
+    this.messages = [...(options.initialMessages ?? [])];
+    this.totalUsage = options.initialUsage
+      ? { ...options.initialUsage }
+      : { input_tokens: 0, output_tokens: 0 };
+    this.isResumed = (options.initialMessages?.length ?? 0) > 0;
+
+    // Initialize session storage
+    if (!this.isResumed) {
+      void initSession({
+        sessionId: this.sessionId,
+        cwd: this.toolContext.cwd,
+        startedAt: new Date().toISOString(),
+        model: this.getActiveModel(),
+      });
+    }
   }
 
   // ─── Public API ──────────────────────────────────────────────
+
+  getSessionId(): string {
+    return this.sessionId;
+  }
+
+  getIsResumed(): boolean {
+    return this.isResumed;
+  }
 
   getActiveModel(): string {
     return this.sessionModelOverride ?? this.defaultModel;
@@ -121,6 +167,9 @@ export class QueryEngine {
     this.messages = [...this.messages, userMsg];
     yield { type: "messages_updated", messages: [...this.messages] };
 
+    // Persist user message
+    void appendEntry(this.toolContext.cwd, this.sessionId, createMessageEntry({ role: "user", message: userMsg }));
+
     // 2. Create abort controller for this turn
     this.abortController = new AbortController();
 
@@ -153,6 +202,13 @@ export class QueryEngine {
         this.totalUsage.output_tokens += result.usage.output_tokens;
 
         yield { type: "usage_updated", totalUsage: { ...this.totalUsage }, turnUsage: { ...result.usage } };
+
+        // Persist usage
+        void appendEntry(this.toolContext.cwd, this.sessionId, createUsageEntry({
+          turn: result.usage,
+          total: { ...this.totalUsage },
+        }));
+
         return { handled: true, terminationReason: result.terminationReason };
       }
 
@@ -163,6 +219,21 @@ export class QueryEngine {
       if (value.type === "assistant_message" || value.type === "tool_result_message") {
         this.messages = [...this.messages, value.message];
         yield { type: "messages_updated", messages: [...this.messages] };
+
+        // Persist assistant message
+        if (value.type === "assistant_message") {
+          void appendEntry(this.toolContext.cwd, this.sessionId, createMessageEntry({ role: "assistant", message: value.message }));
+        }
+      }
+
+      // Persist tool events
+      if (value.type === "tool_use_done") {
+        void appendEntry(this.toolContext.cwd, this.sessionId, createToolEventEntry({
+          name: value.name,
+          phase: "done",
+          resultLength: value.resultLength,
+          isError: value.isError,
+        }));
       }
     }
   }
@@ -180,7 +251,7 @@ export class QueryEngine {
             case "/clear": return "  /clear         Clear conversation history";
             case "/cost": return "  /cost          Show total token usage";
             case "/model": return "  /model [name]   Show or switch model";
-            case "/history": return "  /history       Show message count";
+            case "/history": return "  /history       Show project session history";
             default: return `  ${cmd}`;
           }
         }),
@@ -194,6 +265,7 @@ export class QueryEngine {
       this.messages = [];
       yield { type: "messages_updated", messages: [] };
       yield { type: "command", kind: "info", message: "Conversation cleared." };
+      void appendEntry(this.toolContext.cwd, this.sessionId, createSystemEntry({ level: "info", message: "Conversation cleared." }));
       return { handled: true };
     }
 
@@ -239,11 +311,12 @@ export class QueryEngine {
 
     // /history
     if (command === "/history") {
-      yield {
-        type: "command",
-        kind: "info",
-        message: `${this.messages.length} messages in conversation.`,
-      };
+      try {
+        const historyText = await formatSessionHistory(this.toolContext.cwd);
+        yield { type: "command", kind: "info", message: historyText };
+      } catch {
+        yield { type: "command", kind: "info", message: `${this.messages.length} messages in current session.` };
+      }
       return { handled: true };
     }
 

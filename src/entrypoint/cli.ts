@@ -33,6 +33,30 @@ async function main(): Promise<void> {
   const validModes = ["default", "plan", "auto"];
   const resolvedMode = validModes.includes(permissionMode || "") ? permissionMode as "default" | "plan" | "auto" | undefined : undefined;
 
+  // 解析 --resume 参数
+  const resumeIndex = process.argv.indexOf("--resume");
+  const resumeArg = resumeIndex !== -1 ? process.argv[resumeIndex + 1] : undefined;
+  const resumeSessionId = (resumeArg && !resumeArg.startsWith("--")) ? resumeArg : null;
+  const shouldResume = resumeIndex !== -1;
+
+  // 恢复会话
+  let initialMessages: import("@anthropic-ai/sdk/resources/messages.js").MessageParam[] | undefined;
+  let initialUsage: import("../types/message.js").Usage | undefined;
+  let sessionId: string | undefined;
+
+  if (shouldResume) {
+    try {
+      const { restoreSession } = await import("../session/index.js");
+      const result = await restoreSession(process.cwd(), resumeSessionId);
+      initialMessages = result.messages;
+      initialUsage = result.summary.totalUsage;
+      sessionId = result.summary.sessionId;
+    } catch (err: unknown) {
+      console.error(`Failed to resume session: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  }
+
   // 动态 import React/Ink（只在真正需要时加载）
   const React = await import("react");
   const { render } = await import("ink");
@@ -46,6 +70,9 @@ async function main(): Promise<void> {
     model: resolvedModel,
     toolContext: { cwd: process.cwd() },
     permissionMode: resolvedMode,
+    sessionId,
+    initialMessages,
+    initialUsage,
   });
 
   const { waitUntilExit } = render(
