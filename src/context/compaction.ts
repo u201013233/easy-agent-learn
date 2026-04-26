@@ -5,49 +5,9 @@ import { buildTokenBudgetSnapshot } from "./tokens.js";
 // ─── MicroCompact ───────────────────────────────────────────
 
 const MICROCOMPACT_MIN_MESSAGES = 10;
-const MICROCOMPACT_KEEP_RECENT_TOOL_MESSAGES = 8;
+const MICROCOMPACT_KEEP_RECENT = 8;
 const COMPACTABLE_TOOLS = new Set(["Read", "Grep", "Glob", "Bash"]);
 const CLEARED_PLACEHOLDER = "[Old tool result content cleared]";
-
-/**
- * Count how many tool messages (tool_use or tool_result) are in a message.
- */
-function countToolBlocks(message: MessageParam): number {
-  const content = message.content;
-  if (!Array.isArray(content)) return 0;
-  return content.filter((b: any) => b.type === "tool_use" || b.type === "tool_result").length;
-}
-
-/**
- * Count total tool blocks in messages[start..end].
- */
-function countToolBlocksInRange(messages: MessageParam[], start: number, end: number): number {
-  let count = 0;
-  for (let i = start; i < end; i++) {
-    count += countToolBlocks(messages[i]);
-  }
-  return count;
-}
-
-/**
- * Find the message index where the last N tool messages begin.
- * Returns the index of the first message that should be preserved.
- */
-function findToolMessageBoundary(messages: MessageParam[], keepRecent: number): number {
-  const totalToolBlocks = countToolBlocksInRange(messages, 0, messages.length);
-
-  if (totalToolBlocks <= keepRecent) return 0;
-
-  const target = totalToolBlocks - keepRecent;
-  let accumulated = 0;
-
-  for (let i = 0; i < messages.length; i++) {
-    accumulated += countToolBlocks(messages[i]);
-    if (accumulated >= target) return i;
-  }
-
-  return messages.length;
-}
 
 function microCompactMessage(message: MessageParam): { message: MessageParam; cleared: boolean } {
   if (!Array.isArray(message.content)) return { message, cleared: false };
@@ -69,11 +29,9 @@ function microCompactMessage(message: MessageParam): { message: MessageParam; cl
 export function microCompactMessages(messages: MessageParam[]): { messages: MessageParam[]; didClear: boolean } {
   if (messages.length < MICROCOMPACT_MIN_MESSAGES) return { messages, didClear: false };
 
-  const boundary = findToolMessageBoundary(messages, MICROCOMPACT_KEEP_RECENT_TOOL_MESSAGES);
-
   let didClear = false;
   const result = messages.map((msg, i) => {
-    if (i >= boundary) return msg;
+    if (i >= messages.length - MICROCOMPACT_KEEP_RECENT) return msg;
     const { message, cleared } = microCompactMessage(msg);
     if (cleared) didClear = true;
     return message;
@@ -137,8 +95,6 @@ export interface CompactResult {
   didMicroCompact: boolean;
 }
 
-const PRESERVE_TAIL_TOOL_MESSAGES = 8;
-
 export async function compactMessages(
   messages: MessageParam[],
   callModel: CallModelFn,
@@ -161,8 +117,10 @@ export async function compactMessages(
     { role: "user", content: `Conversation to summarize:\n${JSON.stringify(microCompacted, null, 2)}` },
   ]);
 
-  // Step 4: preserve tail (last 8 tool messages, not general messages)
-  const tailStart = findToolMessageBoundary(microCompacted, PRESERVE_TAIL_TOOL_MESSAGES);
+  // Step 4: preserve tail (last 8 messages)
+  const tailStart = microCompacted.length <= 8
+    ? microCompacted.length
+    : findSafeTailStart(microCompacted, 8);
   const tail = microCompacted.slice(tailStart);
 
   // Step 5: assemble compacted message list
