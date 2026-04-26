@@ -96,6 +96,8 @@ export class QueryEngine {
     this.sessionAllowRules = [...this.sessionAllowRules, rule];
   }
 
+  static COMMANDS = ["/help", "/clear", "/cost", "/model", "/history"] as const;
+
   interrupt(): boolean {
     if (!this.abortController) return false;
     this.abortController.abort();
@@ -172,14 +174,16 @@ export class QueryEngine {
     if (command === "/help") {
       const helpText = [
         "Commands:",
-        "  /help          Show this help message",
-        "  /clear         Clear conversation history",
-        "  /cost          Show total token usage",
-        "  /model         Show current model",
-        "  /model <name>   Switch model for this session",
-        "  /model default Reset to default model",
-        "  /history       Show message count",
-        "  /exit          Exit",
+        ...QueryEngine.COMMANDS.map((cmd) => {
+          switch (cmd) {
+            case "/help": return "  /help          Show this help message";
+            case "/clear": return "  /clear         Clear conversation history";
+            case "/cost": return "  /cost          Show total token usage";
+            case "/model": return "  /model [name]   Show or switch model";
+            case "/history": return "  /history       Show message count";
+            default: return `  ${cmd}`;
+          }
+        }),
       ].join("\n");
       yield { type: "command", kind: "info", message: helpText };
       return { handled: true };

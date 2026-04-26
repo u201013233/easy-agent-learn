@@ -1,7 +1,8 @@
 import React, {useRef, useState, useCallback} from "react";
 import {Box, Text, useApp, useInput} from "ink";
 import {MessageParam} from "@anthropic-ai/sdk/resources/messages.js";
-import type {QueryEngine, QueryEngineEvent} from "../core/queryEngine.js";
+import {QueryEngine} from "../core/queryEngine.js";
+import type {QueryEngineEvent} from "../core/queryEngine.js";
 import type {LoopEvent, ContentBlock} from "../types/message.js";
 import {ToolCallInfo} from "./type.js";
 import {Spinner} from "./components/Spinner.js";
@@ -346,6 +347,17 @@ export function App({engine}: AppProps): React.ReactNode {
             {infoMessage && <Text dimColor>{"  "}{infoMessage}</Text>}
             {lastUsage && !isLoading && (
                 <Text dimColor>{"  tokens: "}{lastUsage.input} in / {lastUsage.output} out</Text>
+            )}
+
+            {/* Slash command 提示 */}
+            {!isLoading && !permissionRequest && inputValue.startsWith("/") && (
+                <Box flexDirection="column" marginTop={0}>
+                    {QueryEngine.COMMANDS
+                    .filter((cmd) => cmd.startsWith(inputValue))
+                    .map((cmd) => (
+                            <Text key={cmd} dimColor>{"  "}{cmd}</Text>
+                        ))}
+                </Box>
             )}
 
             {/* 输入行 */}

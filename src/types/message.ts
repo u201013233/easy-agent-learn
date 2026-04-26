@@ -62,6 +62,7 @@ export interface StreamToolUseInputEvent {
 export interface StreamMessageStartEvent {
   type: "message_start";
   messageId: string;
+  usage?: Usage;
 }
 
 export interface StreamMessageDoneEvent {

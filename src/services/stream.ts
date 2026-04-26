@@ -56,7 +56,7 @@ export async function* streamMessage(
     switch (event.type) {
       case "message_start":
         usage.input_tokens = event.message.usage.input_tokens;
-        yield { type: "message_start", messageId: event.message.id };
+        yield { type: "message_start", messageId: event.message.id, usage: { input_tokens: usage.input_tokens, output_tokens: 0 } };
         break;
 
       case "content_block_start":
