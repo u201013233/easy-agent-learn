@@ -99,7 +99,13 @@ export function checkPermission(params: CheckPermissionParams): PermissionResult
     return { behavior: "ask", request };
   }
 
-  // 5. Read-only tools → allow
+  // 5. MemoryWrite → always allow (low risk, user-initiated knowledge saving)
+  if (toolName === "MemoryWrite") {
+    request.reason = "memory write: low risk knowledge saving";
+    return { behavior: "allow", request };
+  }
+
+  // 6. Read-only tools → allow
   if (toolIsReadOnly) {
     request.reason = "read-only tool";
     return { behavior: "allow", request };
